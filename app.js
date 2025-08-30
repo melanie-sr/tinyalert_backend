@@ -17,6 +17,22 @@ import "./models/server.js";
 
 const app = express();
 
+// ----- PATCH DIAG: court-circuiter TOUTES les requêtes OPTIONS -----
+app.use((req, res, next) => {
+  if (req.method !== "OPTIONS") return next();
+  // Réponse la plus simple possible pour un pré-vol
+  res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+  res.setHeader("Vary", "Origin");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+  );
+  const reqHeaders = req.headers["access-control-request-headers"];
+  if (reqHeaders) res.setHeader("Access-Control-Allow-Headers", reqHeaders);
+  return res.status(204).end();
+});
+
 /* ------------------------------
    1) Origines autorisées
 ------------------------------ */

@@ -1,5 +1,3 @@
-// app.js — Backend TinyAlert (Express sur Vercel, ESM)
-
 import dotenv from "dotenv";
 dotenv.config(); // 1 seule fois, tout en haut
 

@@ -40,30 +40,21 @@ export async function register(req, res) {
 }
 
 export async function login(req, res) {
-  res.cookie("token", token, {
-    httpOnly: true,
-    sameSite: "lax", // même origine via proxy => Lax suffit
-    secure: isProd, // true en prod (HTTPS)
-    path: "/",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
   try {
     const { email, password } = req.body;
     const normEmail = (email || "").toLowerCase().trim();
 
     const user = await User.findOne({ email: normEmail });
-    if (!user) {
+    if (!user)
       return res
         .status(400)
         .json({ message: "Adresse mail ou mot de passe incorrect" });
-    }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
+    if (!isMatch)
       return res
         .status(400)
         .json({ message: "Adresse mail ou mot de passe incorrect" });
-    }
 
     if (!process.env.JWT_SECRET) {
       return res
@@ -76,7 +67,7 @@ export async function login(req, res) {
     });
 
     return res
-      .cookie("token", token, cookieOpts)
+      .cookie("token", token, cookieOpts) // <-- on pose le cookie ici, après création
       .status(200)
       .json({ message: "Connexion réussie", userId: user._id });
   } catch (err) {

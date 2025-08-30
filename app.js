@@ -1,23 +1,30 @@
+// app.js — Backend TinyAlert (Express sur Vercel, ESM)
+
 import dotenv from "dotenv";
-dotenv.config(); // loads variables into process.env
+dotenv.config(); // 1 seule fois, tout en haut
 
 import express from "express";
-import cors from "cors";
 import cookieParser from "cookie-parser";
 
 import connectDB from "./config/db.js";
-// import mongoose from "mongoose";
 import routes from "./routes/index.js";
-// import authRoutes from "./routes/auth.js";
-// import userRoutes from "./routes/users.js";
+import authRoutes from "./routes/auth.js";
+import userRoutes from "./routes/users.js";
 
+// (si tes modèles ont des side-effects d'init)
 import "./models/map.js";
 import "./models/server.js";
 
 const app = express();
 
-const FRONTEND_URL = process.env.FRONTEND_URL;
-const FRONTEND_URL_PREVIEW = process.env.FRONTEND_URL_PREVIEW;
+/* ------------------------------
+   1) Origines autorisées
+------------------------------ */
+const FRONTEND_URL = (process.env.FRONTEND_URL || "").replace(/\/$/, "");
+const FRONTEND_URL_PREVIEW = (process.env.FRONTEND_URL_PREVIEW || "").replace(
+  /\/$/,
+  ""
+);
 const allowedOrigins = [
   FRONTEND_URL,
   FRONTEND_URL_PREVIEW,
@@ -40,7 +47,10 @@ function isAllowedOrigin(origin) {
   );
 }
 
-// Répondre aux pré-vols ici, sans toucher à la DB ni à d'autres middlewares
+/* ------------------------------------------------
+   2) Préflight CORS (OPTIONS) — tout en haut
+      -> ne touche ni à la DB ni à autre chose
+------------------------------------------------- */
 app.use((req, res, next) => {
   if (req.method !== "OPTIONS") return next();
   const origin = req.headers.origin;
@@ -58,46 +68,34 @@ app.use((req, res, next) => {
   return res.status(204).end();
 });
 
-function corsOptionsDelegate(req, cb) {
-  const origin = (req.header("Origin") || "").replace(/\/$/, "");
-  cb(null, {
-    origin: isAllowedOrigin(origin) ? origin : false,
-    credentials: true,
-  });
-}
-app.use(cors(corsOptionsDelegate));
+/* ------------------------------------------------
+   3) En-têtes CORS pour TOUTES les vraies requêtes
+      (GET/POST/...) — simples et robustes
+------------------------------------------------- */
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && isAllowedOrigin(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
+  next();
+});
 
+/* ------------------------------
+   4) Parseurs
+------------------------------ */
 app.use(cookieParser());
 app.use(express.json());
 
-// function corsOptionsDelegate(req, cb) {
-//   const origin = req.header("Origin");
-//   if (!origin) return cb(null, { origin: false }); // requête sans Origin (ex: healthcheck) -> pas de CORS
-//   const isAllowed = allowedOrigins.some((o) =>
-//     o.includes("*") ? matchWildcard(o, origin) : o === origin
-//   );
-//   // IMPORTANT: ne pas throw; renvoyer origin:false si non autorisé
-//   cb(null, { origin: isAllowed ? origin : false, credentials: true });
-// }
-
-// function matchWildcard(pattern, value) {
-//   const re = new RegExp(
-//     "^" + pattern.split("*").map(escapeRegExp).join(".*") + "$"
-//   );
-//   return re.test(value);
-// }
-// function escapeRegExp(s) {
-//   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-// }
-
-/** === Connexion MongoDB avec cache global === */
-// await connectDB();
+/* ------------------------------
+   5) Connexion MongoDB (cache)
+------------------------------ */
 let mongoReady = global.mongoReady || null;
 app.use(async (_req, _res, next) => {
   try {
     if (!mongoReady) {
-      // connectDB() doit appeler mongoose.connect(process.env.MONGODB_URI) SANS options dépréciées
-      mongoReady = connectDB();
+      mongoReady = connectDB(); // doit faire mongoose.connect(...) SANS options dépréciées
       global.mongoReady = mongoReady;
     }
     await mongoReady;
@@ -107,7 +105,9 @@ app.use(async (_req, _res, next) => {
   }
 });
 
-/** === Routes === */
+/* ------------------------------
+   6) Routes
+------------------------------ */
 app.get("/", (_req, res) => {
   res.json({
     ok: true,
@@ -116,14 +116,22 @@ app.get("/", (_req, res) => {
   });
 });
 
-app.options("*", cors(corsOptionsDelegate)); // autorise le pré-vol globalement
-
+// sous-routes
 app.use("/api", routes);
-// app.use("/api/users", userRoutes);
-// app.use("/api/auth", authRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
 
-/** === Export serverless handler pour Vercel === */
-// @vercel/node attend une fonction (req,res) -> app(req,res)
+/* ------------------------------
+   7) Gestion d'erreur JSON
+------------------------------ */
+app.use((err, _req, res, _next) => {
+  console.error("Unhandled error:", err?.stack || err);
+  res.status(500).json({ error: "Internal Server Error" });
+});
+
+/* ------------------------------
+   8) Export serverless (Vercel)
+------------------------------ */
 export default function handler(req, res) {
   return app(req, res);
 }

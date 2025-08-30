@@ -8,7 +8,7 @@ import connectDB from "./config/db.js";
 import userRoutes from "./routes/users.js";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import scoreRoutes from "./routes/scores.js";
+// import scoreRoutes from "./routes/scores.js";
 import authRoutes from "./routes/auth.js";
 import "./models/map.js";
 import "./models/server.js";
@@ -17,7 +17,35 @@ dotenv.config();
 const app = express();
 
 const FRONTEND_URL = process.env.FRONTEND_URL;
-const allowedOrigins = [FRONTEND_URL, "http://localhost:5173"].filter(Boolean);
+const FRONTEND_URL_PREVIEW = process.env.FRONTEND_URL_PREVIEW;
+const allowedOrigins = [
+  FRONTEND_URL,
+  FRONTEND_URL_PREVIEW,
+  "http://localhost:5173",
+].filter(Boolean);
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function matchWildcard(pattern, value) {
+  const re = new RegExp(
+    "^" + pattern.split("*").map(escapeRegExp).join(".*") + "$"
+  );
+  return re.test(value);
+}
+
+function corsOptionsDelegate(req, cb) {
+  const origin = req.header("Origin");
+  if (!origin) return cb(null, { origin: false }); // requête sans Origin (ex: healthcheck) -> pas de CORS
+  const isAllowed = allowedOrigins.some((o) =>
+    o.includes("*") ? matchWildcard(o, origin) : o === origin
+  );
+  // IMPORTANT: ne pas throw; renvoyer origin:false si non autorisé
+  cb(null, { origin: isAllowed ? origin : false, credentials: true });
+}
+
+app.use(cors(corsOptionsDelegate));
+app.options("*", cors(corsOptionsDelegate)); // autorise le pré-vol globalement
 
 // Autorise le front en prod ET en local
 // const allowedOrigins = [
@@ -31,23 +59,23 @@ const allowedOrigins = [FRONTEND_URL, "http://localhost:5173"].filter(Boolean);
 //     credentials: true,
 //   })
 // );
-app.use(
-  cors({
-    origin: (origin, cb) => {
-      // autorise requêtes sans origin (ex: curl, healthchecks)
-      if (
-        !origin ||
-        allowedOrigins.some((o) =>
-          o.includes("*") ? matchWildcard(o, origin) : o === origin
-        )
-      ) {
-        return cb(null, true);
-      }
-      return cb(new Error("CORS not allowed for origin: " + origin));
-    },
-    credentials: true,
-  })
-);
+// app.use(
+//   cors({
+//     origin: (origin, cb) => {
+//       // autorise requêtes sans origin (ex: curl, healthchecks)
+//       if (
+//         !origin ||
+//         allowedOrigins.some((o) =>
+//           o.includes("*") ? matchWildcard(o, origin) : o === origin
+//         )
+//       ) {
+//         return cb(null, true);
+//       }
+//       return cb(new Error("CORS not allowed for origin: " + origin));
+//     },
+//     credentials: true,
+//   })
+// );
 
 function matchWildcard(pattern, value) {
   const re = new RegExp(
@@ -89,9 +117,9 @@ app.get("/", (_req, res) => {
 });
 
 app.use("/api", routes);
-// app.use("/api/users", userRoutes);
+app.use("/api/users", userRoutes);
 // app.use("/api/scores", scoreRoutes);
-// app.use("/api/auth", authRoutes);
+app.use("/api/auth", authRoutes);
 
 /** === Export serverless handler pour Vercel === */
 // @vercel/node attend une fonction (req,res) -> app(req,res)
